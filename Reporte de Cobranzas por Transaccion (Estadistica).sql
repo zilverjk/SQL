@@ -1,0 +1,248 @@
+CREATE PROCEDURE [DBO].[SP_TCCOBR_Q08]
+/*------------------------------------------------------*/
+/*---- EMPRESA           : CASSINELLI S.A.          ----*/
+/*---- CLIENTE           : CASSINELLI S.A.          ----*/
+/*---- SISTEMA           : OFIVENT                  ----*/
+/*---- MÓDULO            : VENTAS                   ----*/
+/*---- PROGRAMA          : FACTURACIÓN              ----*/
+/*---- SCRIPT            : TCDOCU_CLIE              ----*/
+/*---- NOMBRE SP         : SP_TCCOBR__Q06     ----*/
+/*---- DESARROLLADO POR  : JULIO DONGO            ----*/
+/*---- FECHA CREACIÓN    : 20/10/2016               ----*/
+/*---- BASE DE DATOS     : MICROSOFT SQL SERVER     ----*/
+/*---- VERSIÓN           : 2012                     ----*/
+/*---- INVOCA A SP       :                          ----*/
+/*------------------------------------------------------*/
+/*-----------------------------------------------------*/
+/*------------------------------------------------------*/
+/*---- COMENTARIOS: SORTEO POR TIPO DE PAGO         ----*/
+/*------------------------------------------------------*/
+/*---- DROP PROC SP_TCCOBR_Q07           ----*/
+/*---- GRANT ALL ON SP_TCCOBR_Q07 TO PUBLIC     ----*/
+/*---- EXEC SP_TCCOBR_Q07 '02','001' ----*/
+/*----                                              ----*/
+/*------------------------------------------------------*/
+@ISCO_EMPR    TD_VC_002,
+@ISCO_UNID    TD_VC_003.
+@IDFE_INIC    TD_DT_001,
+@IDFE_FINA    TD_DT_001
+AS
+DECLARE 
+@VSFE_INIC TD_VC_010,      
+@VSFE_FINA TD_VC_010,
+@VNNU_PUNT TD_IN_001,
+@VSDE_DOCU TD_VC_500,
+@VSDE_COBR TD_VC_500,
+@VNMO_MINI_SORT TD_NU_016_004,
+@VNNU_PUNT_TARJ TD_IN_001,
+@VNNU_PUNT_EFEC TD_IN_001,
+@VNNU_PUNT_INIC TD_IN_001,
+@VSNO_TARJ TD_VC_020,
+@VNNU_DOCU TD_IN_001,
+--VARIABLE DEL CURSOR 1
+@CSNU_COBR TD_VC_015,
+@CSCO_TIEN TD_VC_015,
+@CSCO_CLIE TD_VC_015,
+@CSNO_CLIE TD_VC_100,
+@CDFE_COBR TD_DT_001,
+@CNIM_TOTA_COBR TD_NU_016_004,
+@CNIM_TARJ_MNAC TD_NU_016_004,
+--VARIABLE DEL CURSOR 2
+@CSTI_DOCU_DETA TD_VC_003,
+@CSNU_DOCU_DETA TD_VC_015,
+--VARIABLE DEL CURSOR 3
+@CSTI_TARJ TD_VC_003,
+@CNIM_TARJ TD_NU_016_004
+
+
+DECLARE CU_TCCOBR_Q07_1 CURSOR FOR
+SELECT T1.NU_COBR,MAX(T1.CO_TIEN),T1.CO_CLIE,MAX(T2.NO_CLIE),MAX(T1.FE_COBR),
+MAX(T1.IM_TOTA_COBR),MAX(T1.IM_TARJ_MNAC)+(MAX(T1.IM_TARJ_MALT) * MAX(T1.FA_CAMB))
+--T1.IM_TOTA_COBR-T1.IM_TARJ_MNAC+ (T1.IM_TARJ_MALT * T1.FA_CAMB),T1.IM_TARJ_MNAC+ (T1.IM_TARJ_MALT * T1.FA_CAMB)
+FROM TCCOBR T1
+JOIN TMCLIE T2
+ON T1.CO_EMPR = T2.CO_EMPR
+AND T1.CO_CLIE = T2.CO_CLIE
+JOIN TDCOBR_DOCU X1
+ON X1.CO_EMPR = T1.CO_EMPR
+AND X1.CO_UNID = T1.CO_UNID
+AND X1.CO_TIEN = T1.CO_TIEN
+AND X1.NU_COBR = T1.NU_COBR
+AND X1.TI_DOCU = 'BOL'
+WHERE T1.CO_EMPR = '02'
+AND T1.CO_UNID = '001'
+AND T1.FE_COBR >= @IDFE_INIC
+AND T1.FE_COBR <= @IDFE_FINA
+AND T1.CO_TIEN NOT IN (SELECT CO_TIEN FROM TMTIEN WHERE CO_EMPR='02' AND ST_PROY='S')
+AND T1.TI_SITU != 'ANU'
+AND T1.IM_TOTA_COBR>=999
+
+GROUP BY T1.NU_COBR, T1.CO_CLIE
+
+OPEN CU_TCCOBR_Q07_1
+FETCH CU_TCCOBR_Q07_1 
+INTO @CSNU_COBR,@CSCO_TIEN,@CSCO_CLIE,@CSNO_CLIE,@CDFE_COBR,@CNIM_TOTA_COBR,@CNIM_TARJ_MNAC
+     
+  WHILE @@FETCH_STATUS = 0        
+    BEGIN        
+        IF @@FETCH_STATUS < 0        
+         BEGIN        
+          ROLLBACK TRANSACTION           
+          CLOSE CU_TCCOBR_Q07_1        
+          DEALLOCATE CU_TCCOBR_Q07_1        
+          RETURN        
+         END        
+
+--SELECT @VNNU_DOCU = 0
+SELECT @VNNU_PUNT_INIC = 0
+IF @CNIM_TOTA_COBR>=999
+BEGIN
+SELECT @VNNU_PUNT = 0
+--SELECT @VNNU_PUNT = @VNNU_PUNT + 1
+  IF @CNIM_TOTA_COBR >= 999 --TODO
+      SELECT @VNNU_PUNT =  1
+  --IF @CNIM_TOTA_COBR - @CNIM_TARJ_MNAC >= 999 --EFECTIVO
+   -- SELECT @VNNU_PUNT =  1
+  ELSE IF @CNIM_TOTA_COBR - @CNIM_TARJ_MNAC >= 999 AND @CNIM_TARJ_MNAC < 999 --EFECTIVO >= 999 Y TARJETA < 999
+    SELECT @VNNU_PUNT_INIC =  1
+  ELSE IF @CNIM_TOTA_COBR >= 999 AND @CNIM_TARJ_MNAC < 999 --TOTAL >= 999 Y TARJETA < 999
+    SELECT @VNNU_PUNT_INIC =  1
+  ELSE IF @CNIM_TOTA_COBR - @CNIM_TARJ_MNAC >= 999 AND @CNIM_TARJ_MNAC >= 999 --EFECTIVO >= 999 Y TARJETA >= 999
+    SELECT @VNNU_PUNT_INIC =  1
+  ELSE IF @CNIM_TOTA_COBR >= 999 AND @CNIM_TARJ_MNAC >= 999 --TOTAL >= 999 Y TARJETA >= 999
+    SELECT @VNNU_PUNT_INIC =  1
+  --ELSE IF @CNIM_TARJ_MNAC >= 999 --TARJETA
+   -- SELECT @VNNU_PUNT =  0
+  ELSE 
+      SELECT @VNNU_PUNT_INIC =  0
+
+SELECT @VSDE_DOCU = ''
+
+DECLARE CU_TCCOBR_Q07_2 CURSOR FOR --SEGUNDO CURSOR
+SELECT TI_DOCU,NU_DOCU 
+FROM TDCOBR_DOCU
+WHERE CO_EMPR = @ISCO_EMPR
+AND   CO_TIEN = @CSCO_TIEN
+AND   NU_COBR = @CSNU_COBR
+--AND   TI_DOCU NOT IN ('FAC')
+
+OPEN CU_TCCOBR_Q07_2
+FETCH CU_TCCOBR_Q07_2 
+INTO @CSTI_DOCU_DETA,@CSNU_DOCU_DETA
+     
+  WHILE @@FETCH_STATUS = 0        
+    BEGIN        
+        IF @@FETCH_STATUS < 0        
+         BEGIN        
+          ROLLBACK TRANSACTION  
+          CLOSE CU_TCCOBR_Q07_2        
+          DEALLOCATE CU_TCCOBR_Q07_2        
+          RETURN        
+         END        
+    SELECT @VSDE_COBR=''   
+ 
+  --LOGICA DEL DETALLE DE COBRANZA
+        SELECT @VNNU_DOCU = @VNNU_DOCU + 1
+        SELECT @VSDE_DOCU = @VSDE_DOCU  + @CSTI_DOCU_DETA +' ' + @CSNU_DOCU_DETA + ' | '
+
+    IF @CNIM_TARJ_MNAC > 0
+    BEGIN
+        --TERCER CUSOR
+    DECLARE CU_TCCOBR_Q07_3 CURSOR FOR 
+    SELECT TI_TARJ,IM_TARJ 
+    FROM TDCOBR_TARJ
+    WHERE CO_EMPR = @ISCO_EMPR
+    AND   CO_TIEN = @CSCO_TIEN
+    AND   NU_COBR = @CSNU_COBR
+
+    OPEN CU_TCCOBR_Q07_3
+    FETCH CU_TCCOBR_Q07_3 
+    INTO @CSTI_TARJ,@CNIM_TARJ
+     
+      WHILE @@FETCH_STATUS = 0        
+      BEGIN        
+        IF @@FETCH_STATUS < 0        
+         BEGIN        
+          ROLLBACK TRANSACTION           
+          CLOSE CU_TCCOBR_Q07_3        
+          DEALLOCATE CU_TCCOBR_Q07_3        
+          RETURN        
+         END        
+         
+        --LOGICA DEL TERCER CURSOR
+        SELECT @VNNU_PUNT_TARJ=ISNULL(NU_PUNT,0),@VNMO_MINI_SORT=ISNULL(MO_MINI_SORT,0),@VSNO_TARJ = NO_TARJ
+        FROM TTTARJ_CRDB WHERE TI_TARJ=@CSTI_TARJ
+        
+        IF @CNIM_TARJ >= @VNMO_MINI_SORT
+        BEGIN
+            SELECT @VNNU_PUNT = @VNNU_PUNT_INIC + @VNNU_PUNT_TARJ
+          SELECT @VSDE_COBR = @VSDE_COBR + @CSTI_TARJ + ' ' + @VSNO_TARJ + ' ' + STR(@CNIM_TARJ,16,2) +'|'
+        END
+        ELSE
+        BEGIN
+          SELECT @VSDE_COBR = @VSDE_COBR + @CSTI_TARJ + ' ' + @VSNO_TARJ + ' ' + STR(@CNIM_TARJ,16,2) +'|'
+        END
+
+
+     IF @@ERROR <> 0        
+         BEGIN         
+          ROLLBACK TRANSACTION           
+          CLOSE CU_TCCOBR_Q07_3        
+          DEALLOCATE CU_TCCOBR_Q07_3        
+          RETURN        
+         END        
+        
+        FETCH CU_TCCOBR_Q07_3 --TERCER CURSOR 
+        INTO  @CSTI_TARJ,@CNIM_TARJ               
+
+        END /* 3 CURSOR */        
+
+    CLOSE CU_TCCOBR_Q07_3        
+    DEALLOCATE CU_TCCOBR_Q07_3      
+
+    END  --IF @CNIM_TARJ_MNAC > 0
+
+
+     IF @@ERROR <> 0        
+         BEGIN         
+          ROLLBACK TRANSACTION           
+          CLOSE CU_TCCOBR_Q07_2        
+          DEALLOCATE CU_TCCOBR_Q07_2        
+          RETURN        
+         END        
+        
+        FETCH CU_TCCOBR_Q07_2 --SEGUNDO CURSOR 
+        INTO  @CSTI_DOCU_DETA,@CSNU_DOCU_DETA               
+
+    END /* 2 CURSOR */        
+
+CLOSE CU_TCCOBR_Q07_2        
+DEALLOCATE CU_TCCOBR_Q07_2      
+
+DECLARE @CNT INT = 0
+
+WHILE @CNT < @VNNU_PUNT
+BEGIN
+   
+   INSERT INTO TCSORT (NU_COBR,CO_TIEN,CO_CLIE,NO_CLIE,FE_COBR,IM_TOTA_COBR,IM_TARJ_MNAC,DE_DOCU,DE_COBR,NU_OPCI) 
+   VALUES (@CSNU_COBR,@CSCO_TIEN,@CSCO_CLIE,@CSNO_CLIE,@CDFE_COBR,@CNIM_TOTA_COBR,@CNIM_TARJ_MNAC,@VSDE_DOCU,@VSDE_COBR,@VNNU_PUNT)
+   SET @CNT = @CNT + 1;
+END
+
+END --IF @CNIM_TOTA_COBR>=999 
+
+     IF @@ERROR <> 0        
+         BEGIN         
+          ROLLBACK TRANSACTION           
+          CLOSE CU_TCCOBR_Q07_1        
+          DEALLOCATE CU_TCCOBR_Q07_1        
+          RETURN        
+         END        
+        
+        FETCH CU_TCCOBR_Q07_1        
+        INTO  @CSNU_COBR,@CSCO_TIEN,@CSCO_CLIE,@CSNO_CLIE,@CDFE_COBR,@CNIM_TOTA_COBR,@CNIM_TARJ_MNAC               
+        
+    END /* 1 CURSOR */         
+               
+CLOSE CU_TCCOBR_Q07_1        
+DEALLOCATE CU_TCCOBR_Q07_1 
