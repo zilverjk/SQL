@@ -1,29 +1,37 @@
-create proc SP_TRANS_DOCU_Q01
-@isco_empr varchar(2),
-@isti_docu varchar(3),
-@isnu_docu varchar(20),
-@isco_item varchar(20)
+CREATE PROC SP_TRANS_DOCU_Q01
+@ISCO_EMPR VARCHAR(2),
+@ISTI_DOCU VARCHAR(3),
+@ISNU_DOCU VARCHAR(20),
+@ISCO_ITEM VARCHAR(20)
 
-as
+AS
 
-declare
-@vnca_actu numeric(16,4),
-@vnre_esta int, 
-@vsco_alama_refe varchar(3)
+DECLARE
+@VNCA_ACTU NUMERIC(16,4),
+@VNRE_ESTA INT, 
+@VSCO_ALAMA_REFE VARCHAR(3)
 
---Verifico que el documento este ACTIVO, si esta anulado devuelve 1
-select @vnre_esta = count(*) from tcdocu_clie where co_empr = @isco_empr and ti_docu = @isti_docu and nu_docu = @isnu_docu and co_esta_docu = 'ANU'
+--VERIFICO QUE EL DOCUMENTO ESTE ACTIVO, SI ESTA ANULADO DEVUELVE 1
+SELECT @VNRE_ESTA = COUNT(*) FROM TCDOCU_CLIE WHERE CO_EMPR = @ISCO_EMPR AND TI_DOCU = @ISTI_DOCU AND NU_DOCU = @ISNU_DOCU AND CO_ESTA_DOCU = 'ANU'
 
-if @vnre_esta = 0
-begin
---Verifico el stock en el 272
-select @vnca_actu = ca_actu from tastoc_actu where co_alma = '272' and co_item = @isco_item
+IF @VNRE_ESTA = 0 --SI EL DOCUMENTO ESTA ACTIVO
+BEGIN
+--VERIFICO EL STOCK EN EL 272
+SELECT @VNCA_ACTU = CA_ACTU, @VSCO_ALAMA_REFE = CO_ALMA FROM TASTOC_ACTU WHERE CO_ALMA = '272' AND CO_ITEM = @ISCO_ITEM
 
-end
-else
-begin
 
---El documento esta anulado
-select isnull(@vnca_actu,0) , @vnre_esta, @vsco_alama_refe
+IF @VNCA_ACTU <= 0
+BEGIN
+--VERIFICO EL STOCK EN EL 572 SI NO TIENE EN EL 272
+SELECT @VNCA_ACTU = CA_ACTU, @VSCO_ALAMA_REFE = CO_ALMA FROM TASTOC_ACTU WHERE CO_ALMA = '572' AND CO_ITEM = @ISCO_ITEM
+END
 
-end
+END
+
+IF @VNRE_ESTA != 0 -- SI EL DOCUMENTO ESTA ANULADO
+BEGIN 
+SELECT @VNCA_ACTU = 0, @VSCO_ALAMA_REFE = ''
+END
+
+--DEVUELVE PARAMETROS
+SELECT @VNCA_ACTU, @VNRE_ESTA, @VSCO_ALAMA_REFE
